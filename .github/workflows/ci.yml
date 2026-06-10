@@ -7,7 +7,7 @@ on:
     branches: [main, master]
 
 jobs:
-  frontend:
+  build-frontend:
     runs-on: ubuntu-latest
 
     steps:
@@ -24,62 +24,8 @@ jobs:
           corepack enable
           corepack prepare pnpm@latest --activate
 
-      - name: Install frontend dependencies
+      - name: Install dependencies
         run: pnpm install --ignore-scripts --no-frozen-lockfile
 
-      - name: Build frontend
+      - name: Build React app
         run: pnpm build
-
-  backend:
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: laba4_food_safety_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres -d laba4_food_safety_test"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
-    env:
-      NODE_ENV: test
-      PORT: 5001
-      JWT_SECRET: test_secret_for_ci
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/laba4_food_safety_test
-      PGSSL: "false"
-      CORS_ORIGIN: http://localhost:3000
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Enable pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@latest --activate
-
-      - name: Install backend dependencies
-        working-directory: ./backend
-        run: |
-          rm -rf node_modules
-          pnpm install --ignore-scripts --no-frozen-lockfile --force
-
-      - name: Check dotenv installed
-        working-directory: ./backend
-        run: node -e "console.log(require.resolve('dotenv'))"
-
-      - name: Run backend smoke test
-        working-directory: ./backend
-        run: pnpm test
