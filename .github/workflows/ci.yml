@@ -65,14 +65,9 @@ jobs:
         with:
           node-version: 22
 
-      - name: Enable pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@latest --activate
-
       - name: Install backend dependencies
         working-directory: ./backend
-        run: pnpm install --ignore-scripts --no-frozen-lockfile
+        run: npm ci
 
       - name: Check dotenv installed
         working-directory: ./backend
@@ -80,4 +75,4 @@ jobs:
 
       - name: Run backend smoke test
         working-directory: ./backend
-        run: pnpm test
+        run: npm test
