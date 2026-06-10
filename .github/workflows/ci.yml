@@ -24,7 +24,7 @@ jobs:
           corepack enable
           corepack prepare pnpm@latest --activate
 
-      - name: Install dependencies
+      - name: Install frontend dependencies
         run: pnpm install --ignore-scripts --no-frozen-lockfile
 
       - name: Build frontend
@@ -70,9 +70,14 @@ jobs:
           corepack enable
           corepack prepare pnpm@latest --activate
 
-      - name: Install dependencies
+      - name: Install backend dependencies
+        working-directory: ./backend
         run: pnpm install --ignore-scripts --no-frozen-lockfile
 
+      - name: Check dotenv installed
+        working-directory: ./backend
+        run: node -e "console.log(require.resolve('dotenv'))"
+
       - name: Run backend smoke test
-        working-directory: backend
+        working-directory: ./backend
         run: pnpm test
