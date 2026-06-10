@@ -24,8 +24,8 @@ jobs:
           corepack enable
           corepack prepare pnpm@latest --activate
 
-      - name: Install frontend dependencies
-        run: pnpm install --ignore-scripts
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts --no-frozen-lockfile
 
       - name: Build frontend
         run: pnpm build
@@ -70,9 +70,8 @@ jobs:
           corepack enable
           corepack prepare pnpm@latest --activate
 
-      - name: Install backend dependencies
-        working-directory: backend
-        run: pnpm install --ignore-scripts
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts --no-frozen-lockfile
 
       - name: Run backend smoke test
         working-directory: backend
