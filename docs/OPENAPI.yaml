@@ -1,0 +1,293 @@
+openapi: 3.0.3
+info:
+  title: Контроль пищевой безопасности API
+  version: 1.0.0
+  description: REST API для системы учёта проверок пищевой продукции с JWT, ролями и журналом действий.
+servers:
+  - url: /api
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        role:
+          type: string
+          enum: [user, specialist, admin]
+        status:
+          type: string
+          enum: [active, blocked]
+    Inspection:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        enterprise: { type: string }
+        product: { type: string }
+        riskLevel:
+          type: string
+          enum: [Низкий, Средний, Высокий]
+        status:
+          type: string
+          enum: [Новая, В работе, Проверено, Соответствует нормам, Требует устранения, Закрыта]
+        date: { type: string, format: date }
+        description: { type: string }
+        createdBy: { type: string, nullable: true }
+        assignedUserId: { type: string, nullable: true }
+    InspectionInput:
+      type: object
+      required: [name, enterprise, product, riskLevel, status, date]
+      properties:
+        name: { type: string, maxLength: 160 }
+        enterprise: { type: string, maxLength: 160 }
+        product: { type: string, maxLength: 160 }
+        riskLevel:
+          type: string
+          enum: [Низкий, Средний, Высокий]
+        status:
+          type: string
+          enum: [Новая, В работе, Проверено, Соответствует нормам, Требует устранения, Закрыта]
+        date: { type: string, format: date }
+        description: { type: string, maxLength: 1000 }
+paths:
+  /health:
+    get:
+      security: []
+      summary: Проверка работоспособности backend
+      responses:
+        '200':
+          description: Backend работает
+  /auth/register:
+    post:
+      security: []
+      summary: Регистрация пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string, minLength: 3 }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        '201': { description: Пользователь зарегистрирован }
+        '400': { description: Ошибка входных данных }
+        '409': { description: Пользователь уже существует }
+  /auth/login:
+    post:
+      security: []
+      summary: Вход и получение JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login, password]
+              properties:
+                login: { type: string }
+                password: { type: string }
+      responses:
+        '200': { description: JWT и данные пользователя }
+        '401': { description: Неверный логин или пароль }
+        '403': { description: Пользователь заблокирован }
+  /auth/me:
+    get:
+      summary: Текущий пользователь
+      responses:
+        '200': { description: Данные пользователя }
+        '401': { description: Нет токена или токен недействителен }
+  /profile:
+    get:
+      summary: Защищённый профиль пользователя
+      responses:
+        '200': { description: Данные пользователя }
+        '401': { description: Нет токена или токен недействителен }
+  /inspections:
+    get:
+      summary: Список проверок с поиском, фильтрацией, сортировкой и пагинацией
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 50 }
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: riskLevel
+          schema: { type: string, enum: [Низкий, Средний, Высокий] }
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: sortBy
+          schema: { type: string, enum: [date, name, enterprise, product, riskLevel, status, createdAt] }
+        - in: query
+          name: sortOrder
+          schema: { type: string, enum: [asc, desc] }
+      responses:
+        '200': { description: Список проверок }
+        '401': { description: Нет токена или токен недействителен }
+    post:
+      summary: Создание проверки
+      description: Доступно ролям user, specialist, admin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InspectionInput'
+      responses:
+        '201': { description: Проверка создана }
+        '400': { description: Ошибка входных данных }
+        '401': { description: Нет токена }
+        '403': { description: Недостаточно прав }
+  /inspections/export.csv:
+    get:
+      summary: Выгрузка проверок в CSV
+      description: Доступно ролям user, specialist, admin. Учитывает поиск, фильтры, сортировку и ограничения доступа по роли.
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: riskLevel
+          schema: { type: string, enum: [Низкий, Средний, Высокий] }
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: sortBy
+          schema: { type: string, enum: [date, name, enterprise, product, riskLevel, status, createdAt] }
+        - in: query
+          name: sortOrder
+          schema: { type: string, enum: [asc, desc] }
+      responses:
+        '200': { description: CSV-файл со списком проверок }
+        '401': { description: Нет токена или токен недействителен }
+        '403': { description: Недостаточно прав }
+  /inspections/{id}:
+    get:
+      summary: Карточка проверки
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Проверка найдена }
+        '403': { description: Нет доступа к проверке }
+        '404': { description: Проверка не найдена }
+    put:
+      summary: Редактирование проверки
+      description: user может изменять только свои проверки, specialist и admin — все.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InspectionInput'
+      responses:
+        '200': { description: Проверка обновлена }
+        '400': { description: Ошибка входных данных }
+        '403': { description: Недостаточно прав }
+        '404': { description: Проверка не найдена }
+    delete:
+      summary: Удаление проверки
+      description: user может удалять только свои проверки, specialist и admin — все.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Проверка удалена }
+        '403': { description: Недостаточно прав }
+        '404': { description: Проверка не найдена }
+  /users:
+    get:
+      summary: Список пользователей
+      description: Только admin.
+      responses:
+        '200': { description: Список пользователей }
+        '403': { description: Недостаточно прав }
+  /users/{id}:
+    put:
+      summary: Изменение роли или статуса пользователя
+      description: Только admin.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: string, enum: [user, specialist, admin] }
+                status: { type: string, enum: [active, blocked] }
+      responses:
+        '200': { description: Пользователь обновлён }
+        '400': { description: Ошибка входных данных }
+        '403': { description: Недостаточно прав }
+        '404': { description: Пользователь не найден }
+  /admin/users:
+    get:
+      summary: Альтернативный путь списка пользователей
+      description: Только admin. Повторяет /users.
+      responses:
+        '200': { description: Список пользователей }
+        '403': { description: Недостаточно прав }
+  /admin/users/{id}:
+    put:
+      summary: Альтернативный путь изменения роли или статуса пользователя
+      description: Только admin. Повторяет /users/{id}.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Пользователь обновлён }
+        '400': { description: Ошибка входных данных }
+        '403': { description: Недостаточно прав }
+        '404': { description: Пользователь не найден }
+  /audit-log:
+    get:
+      summary: Журнал действий
+      description: Только admin.
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 300 }
+      responses:
+        '200': { description: Записи журнала }
+        '403': { description: Недостаточно прав }
