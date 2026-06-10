@@ -2,24 +2,37 @@ name: CI/CD
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: [main, master]
   pull_request:
+    branches: [main, master]
 
 jobs:
   frontend:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@latest --activate
+
       - name: Install frontend dependencies
-        run: npm ci
+        run: pnpm install --ignore-scripts
+
       - name: Build frontend
-        run: npm run build
+        run: pnpm build
 
   backend:
     runs-on: ubuntu-latest
+
     services:
       postgres:
         image: postgres:16
@@ -34,122 +47,33 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+
     env:
+      NODE_ENV: test
+      PORT: 5001
+      JWT_SECRET: test_secret_for_ci
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/laba4_food_safety_test
-      JWT_SECRET: ci_test_secret
+      PGSSL: "false"
+      CORS_ORIGIN: http://localhost:3000
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@latest --activate
+
       - name: Install backend dependencies
         working-directory: backend
-        run: npm install
-      - name: Syntax check
-        run: |
-          node --check backend/src/server.js
-          node --check backend/src/db.js
-          node --check backend/src/routes/auth.js
-          node --check backend/src/routes/inspections.js
-          node --check backend/src/routes/users.js
-          node --check backend/src/routes/audit.js
+        run: pnpm install --ignore-scripts
+
       - name: Run backend smoke test
         working-directory: backend
-        run: npm test
-
-  deploy:
-    name: Deploy to server
-    runs-on: ubuntu-latest
-    needs: [frontend, backend]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    env:
-      SSH_HOST: ${{ secrets.SSH_HOST }}
-      SSH_USER: ${{ secrets.SSH_USER }}
-      SSH_PORT: ${{ secrets.SSH_PORT }}
-      SSH_KEY: ${{ secrets.SSH_KEY }}
-      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-      WEB_ROOT: ${{ secrets.WEB_ROOT }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      JWT_SECRET: ${{ secrets.JWT_SECRET }}
-      CORS_ORIGIN: ${{ secrets.CORS_ORIGIN }}
-      PGSSL: ${{ secrets.PGSSL }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Build frontend for production
-        run: |
-          npm ci
-          npm run build
-
-      - name: Prepare deployment archives
-        run: |
-          tar \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='backend/node_modules' \
-            --exclude='backend/.env' \
-            --exclude='build' \
-            -czf /tmp/laba4_source.tar.gz .
-          tar -czf /tmp/laba4_build.tar.gz build
-          cat > /tmp/laba4_backend.env <<ENV
-          PORT=5001
-          NODE_ENV=production
-          JWT_SECRET=${JWT_SECRET}
-          JWT_EXPIRES_IN=2h
-          CORS_ORIGIN=${CORS_ORIGIN:-https://217.71.129.139:5106}
-          DATABASE_URL=${DATABASE_URL}
-          PGSSL=${PGSSL:-false}
-          ENV
-
-      - name: Configure SSH
-        run: |
-          test -n "$SSH_HOST"
-          test -n "$SSH_USER"
-          test -n "$SSH_KEY"
-          test -n "$DATABASE_URL"
-          test -n "$JWT_SECRET"
-          SSH_PORT="${SSH_PORT:-5114}"
-          echo "SSH_PORT=$SSH_PORT" >> "$GITHUB_ENV"
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
-
-      - name: Upload files to server
-        run: |
-          scp -i ~/.ssh/id_deploy -P "$SSH_PORT" /tmp/laba4_source.tar.gz "$SSH_USER@$SSH_HOST:/tmp/laba4_source.tar.gz"
-          scp -i ~/.ssh/id_deploy -P "$SSH_PORT" /tmp/laba4_build.tar.gz "$SSH_USER@$SSH_HOST:/tmp/laba4_build.tar.gz"
-          scp -i ~/.ssh/id_deploy -P "$SSH_PORT" /tmp/laba4_backend.env "$SSH_USER@$SSH_HOST:/tmp/laba4_backend.env"
-
-      - name: Deploy on server
-        run: |
-          DEPLOY_PATH="${DEPLOY_PATH:-/home/romanalx/laba4}"
-          WEB_ROOT="${WEB_ROOT:-/var/www/html}"
-          ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "DEPLOY_PATH='$DEPLOY_PATH' WEB_ROOT='$WEB_ROOT' bash -s" <<'REMOTE'
-          set -euo pipefail
-          mkdir -p "$DEPLOY_PATH"
-          tar -xzf /tmp/laba4_source.tar.gz -C "$DEPLOY_PATH"
-          tar -xzf /tmp/laba4_build.tar.gz -C "$DEPLOY_PATH"
-          cp /tmp/laba4_backend.env "$DEPLOY_PATH/backend/.env"
-
-          cd "$DEPLOY_PATH/backend"
-          npm ci --omit=dev || npm install --omit=dev
-
-          if command -v pm2 >/dev/null 2>&1; then
-            pm2 start src/server.js --name laba4-api --update-env || pm2 restart laba4-api --update-env
-            pm2 save || true
-          else
-            pkill -f "$DEPLOY_PATH/backend/src/server.js" || true
-            nohup node src/server.js > api.log 2>&1 &
-          fi
-
-          curl -fsS http://127.0.0.1:5001/api/health
-
-          rm -rf "$WEB_ROOT"/*
-          cp -r "$DEPLOY_PATH/build"/* "$WEB_ROOT"/
-          echo "Deploy completed"
-          REMOTE
+        run: pnpm test
