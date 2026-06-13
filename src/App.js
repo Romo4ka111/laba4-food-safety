@@ -25,6 +25,14 @@ const roleLabels = {
     admin: 'Администратор'
 };
 
+const readStoredUser = () => {
+    try {
+        return JSON.parse(localStorage.getItem('user') || 'null');
+    } catch (_) {
+        return null;
+    }
+};
+
 const Header = ({ currentUser, onLogout }) => {
     const navigate = useNavigate();
 
@@ -36,7 +44,7 @@ const Header = ({ currentUser, onLogout }) => {
         }
 
         onLogout();
-        navigate('/login');
+        navigate('/login', { replace: true });
     };
 
     return (
@@ -126,13 +134,11 @@ const PublicRoute = ({ currentUser, children }) => {
     return children;
 };
 
-const App = () => {
+const AppContent = () => {
+    const navigate = useNavigate();
+
     const [currentUser, setCurrentUser] = useState(() => {
-        try {
-            return JSON.parse(localStorage.getItem('user')) || null;
-        } catch (_) {
-            return null;
-        }
+        return readStoredUser();
     });
 
     const authValue = useMemo(() => ({ currentUser, setCurrentUser }), [currentUser]);
@@ -160,11 +166,44 @@ const App = () => {
                 setCurrentUser(response.data.user);
             } catch (_) {
                 clearSession();
+                navigate('/login', { replace: true });
             }
         };
 
         validateSession();
-    }, []);
+    }, [navigate]);
+
+    useEffect(() => {
+        const handleStorageChange = (event) => {
+            if (!['token', 'user', 'isAuth'].includes(event.key)) {
+                return;
+            }
+
+            const token = localStorage.getItem('token');
+
+            if (!token) {
+                clearSession();
+                navigate('/login', { replace: true });
+                return;
+            }
+
+            const user = readStoredUser();
+
+            if (!user) {
+                clearSession();
+                navigate('/login', { replace: true });
+                return;
+            }
+
+            setCurrentUser(user);
+        };
+
+        window.addEventListener('storage', handleStorageChange);
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+        };
+    }, [navigate]);
 
     const handleLogin = (user, token) => {
         localStorage.setItem('token', token);
@@ -178,7 +217,7 @@ const App = () => {
     };
 
     return (
-        <Router>
+        <>
             <Header currentUser={currentUser} onLogout={handleLogout} />
 
             <main className="app-main">
@@ -262,6 +301,14 @@ const App = () => {
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
             </main>
+        </>
+    );
+};
+
+const App = () => {
+    return (
+        <Router>
+            <AppContent />
         </Router>
     );
 };
